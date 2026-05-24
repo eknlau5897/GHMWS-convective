@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3-Tier RainViewer Convective Tracker</title>
+    <title>Sensitive 3-Tier Convective Tracker</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body {
@@ -43,7 +43,7 @@
 </head>
 <body>
 
-    <h1>RainViewer 3-Tier Convective Risk Processor</h1>
+    <h1>RainViewer Sensitive 3-Tier Risk Processor</h1>
     <div class="metadata" id="timestampDisplay">Targeting active grid arrays...</div>
 
     <div class="map-container">
@@ -52,7 +52,7 @@
             <div id="map" class="map-frame"></div>
         </div>
         <div class="card">
-            <h3>3-Tier Convective Risk Map (Yellow / Red / Purple)</h3>
+            <h3>Optimized Convective Risk Map</h3>
             <div id="maskMap" class="map-frame"></div>
         </div>
     </div>
@@ -105,7 +105,7 @@
                 }).addTo(leftRadarLayerGroup);
 
                 runViewportVectorAnalysis();
-                statusText.innerText = "Status: 3-Tier structural maps active. Pan or zoom freely.";
+                statusText.innerText = "Status: Conditions optimized. Higher sensitivity active.";
             });
 
         // 4. THE 3-TIER GEOSPATIAL EXTRACTION ENGINE
@@ -114,7 +114,6 @@
 
             const radarTiles = map.getContainer().querySelectorAll('.leaflet-tile-container img');
             
-            // Three distinct point arrays to separate geographic coordinates
             let tierPoints = {
                 yellow: [],
                 red: [],
@@ -146,13 +145,13 @@
                                 if (a > 0) {
                                     let assignedTier = null;
 
-                                    // Combined conditions to create 3 crisp tiers
-                                    if ((r > 200 && g < 80 && b > 150) || (r > 240 && g > 240 && b > 240)) {
-                                        assignedTier = 'purple'; // Extreme Convection + Hail (Pink/White combined)
-                                    } else if (r > 170 && g < 60 && b < 60) {
-                                        assignedTier = 'red';    // Severe Storm Front (Deep Red)
-                                    } else if (r > 210 && g > 160 && b < 50) {
-                                        assignedTier = 'yellow'; // Moderate Convection (Yellow/Orange)
+                                    // NEW FIXED CONDITIONS: Much friendlier thresholds for capturing core values
+                                    if ((r > 180 && b > 120) || (r > 220 && g > 220 && b > 220)) {
+                                        assignedTier = 'purple'; // Inclusive Purple Core (Pinks/Whites)
+                                    } else if (r > 160 && g < 70 && b < 70) {
+                                        assignedTier = 'red';    // Severe Red Core
+                                    } else if (r > 190 && g > 140 && b < 70) {
+                                        assignedTier = 'yellow'; // Moderate Yellow Core
                                     }
 
                                     if (assignedTier) {
@@ -170,16 +169,15 @@
                 }
             });
 
-            // 5. SEPARATE CLUSTERING PASSES PER RISK LEVEL
+            // 5. CLUSTERING STYLES
             const tierStyles = {
-                yellow: { color: '#eab308', fillColor: '#fef08a', opacity: 0.35 },
-                red:    { color: '#dc2626', fillColor: '#fca5a5', opacity: 0.50 },
-                purple: { color: '#7e22ce', fillColor: '#c084fc', opacity: 0.65 } // Increased purple opacity for severe impact areas
+                yellow: { color: '#eab308', fillColor: '#fef08a', opacity: 0.25 },
+                red:    { color: '#dc2626', fillColor: '#fca5a5', opacity: 0.35 },
+                purple: { color: '#6b21a8', fillColor: '#7c3aed', opacity: 0.30 }  
             };
 
             const dynamicRadius = Math.max(8, 60 - ((currentZoom - 5) * 10));
 
-            // Run Turf clustering for each individual tier sequentially
             Object.keys(tierPoints).forEach(tierName => {
                 const pointsList = tierPoints[tierName];
                 
@@ -198,7 +196,7 @@
                                     L.geoJSON(hull, {
                                         style: {
                                             color: tierStyles[tierName].color,
-                                            weight: 2.5,
+                                            weight: 2,
                                             fillColor: tierStyles[tierName].fillColor,
                                             fillOpacity: tierStyles[tierName].opacity
                                         }
