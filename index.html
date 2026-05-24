@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sensitive 3-Tier Convective Tracker</title>
+    <title>Nested 3-Tier Convective Tracker</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body {
@@ -43,7 +43,7 @@
 </head>
 <body>
 
-    <h1>RainViewer Sensitive 3-Tier Risk Processor</h1>
+    <h1>RainViewer Concentric 3-Tier Risk Tracker</h1>
     <div class="metadata" id="timestampDisplay">Targeting active grid arrays...</div>
 
     <div class="map-container">
@@ -52,7 +52,7 @@
             <div id="map" class="map-frame"></div>
         </div>
         <div class="card">
-            <h3>Optimized Convective Risk Map</h3>
+            <h3>Nested Convective Boundaries (Yellow → Red → Purple)</h3>
             <div id="maskMap" class="map-frame"></div>
         </div>
     </div>
@@ -105,10 +105,10 @@
                 }).addTo(leftRadarLayerGroup);
 
                 runViewportVectorAnalysis();
-                statusText.innerText = "Status: Conditions optimized. Higher sensitivity active.";
+                statusText.innerText = "Status: Nesting structural matrix calculations completed.";
             });
 
-        // 4. THE 3-TIER GEOSPATIAL EXTRACTION ENGINE
+        // 4. THE NESTED GEOSPATIAL EXTRACTION ENGINE
         function runViewportVectorAnalysis() {
             maskPolygonLayer.clearLayers();
 
@@ -143,24 +143,22 @@
                                 let r = pixels[i], g = pixels[i + 1], b = pixels[i + 2], a = pixels[i + 3];
                                 
                                 if (a > 0) {
-                                    let assignedTier = null;
+                                    // Identify base color brackets
+                                    const isPurple = (r > 180 && b > 120) || (r > 220 && g > 220 && b > 220);
+                                    const isRed    = !isPurple && (r > 160 && g < 70 && b < 70);
+                                    const isYellow = !isPurple && !isRed && (r > 190 && g > 140 && b < 70);
 
-                                    // NEW FIXED CONDITIONS: Much friendlier thresholds for capturing core values
-                                    if ((r > 180 && b > 120) || (r > 220 && g > 220 && b > 220)) {
-                                        assignedTier = 'purple'; // Inclusive Purple Core (Pinks/Whites)
-                                    } else if (r > 160 && g < 70 && b < 70) {
-                                        assignedTier = 'red';    // Severe Red Core
-                                    } else if (r > 190 && g > 140 && b < 70) {
-                                        assignedTier = 'yellow'; // Moderate Yellow Core
-                                    }
-
-                                    if (assignedTier) {
+                                    if (isPurple || isRed || isYellow) {
                                         const containerElement = map.getContainer().getBoundingClientRect();
                                         const targetLayerX = rect.left - containerElement.left + x;
                                         const targetLayerY = rect.top - containerElement.top + y;
-                                        
                                         const realLatlng = map.containerPointToLatLng(L.point(targetLayerX, targetLayerY));
-                                        tierPoints[assignedTier].push(turf.point([realLatlng.lng, realLatlng.lat]));
+                                        const pointFeature = turf.point([realLatlng.lng, realLatlng.lat]);
+
+                                        // FIXED: Inclusive pushing rules create seamless nested hulls
+                                        if (isYellow || isRed || isPurple) tierPoints.yellow.push(pointFeature);
+                                        if (isRed || isPurple)             tierPoints.red.push(pointFeature);
+                                        if (isPurple)                      tierPoints.purple.push(pointFeature);
                                     }
                                 }
                             }
@@ -169,16 +167,20 @@
                 }
             });
 
-            // 5. CLUSTERING STYLES
+            // 5. STACKED ORDER RENDERING CONFIGURATION
             const tierStyles = {
-                yellow: { color: '#eab308', fillColor: '#fef08a', opacity: 0.25 },
+                yellow: { color: '#eab308', fillColor: '#fef08a', opacity: 0.20 },
                 red:    { color: '#dc2626', fillColor: '#fca5a5', opacity: 0.35 },
-                purple: { color: '#6b21a8', fillColor: '#7c3aed', opacity: 0.30 }  
+                purple: { color: '#6b21a8', fillColor: '#7c3aed', opacity: 0.40 }  
             };
 
             const dynamicRadius = Math.max(8, 60 - ((currentZoom - 5) * 10));
 
-            Object.keys(tierPoints).forEach(tierName => {
+            // FIXED: Loops explicitly down from yellow to red to purple 
+            // This forces Leaflet to draw the smaller shapes directly on top of the larger ones
+            const renderingSequence = ['yellow', 'red', 'purple'];
+
+            renderingSequence.forEach(tierName => {
                 const pointsList = tierPoints[tierName];
                 
                 if (pointsList.length >= 3) {
