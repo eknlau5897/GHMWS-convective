@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Tier RainViewer Vector Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #0b0f19;
+            color: #f1f5f9;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 { color: #38bdf8; font-size: 24px; margin-bottom: 5px; }
+        .metadata { color: #64748b; font-size: 14px; margin-bottom: 25px; font-weight: bold; }
+        .map-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #1e293b;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+            flex: 1;
+            min-width: 450px;
+        }
+        .map-frame {
+            height: 550px;
+            border: 2px solid #334155;
+            background: #111827;
+            border-radius: 8px;
+        }
+        #status { color: #38bdf8; font-weight: bold; margin-top: 15px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <h1>RainViewer 4-Tier Convective Risk Processor</h1>
+    <div class="metadata" id="timestampDisplay">Targeting active grid arrays...</div>
+
+    <div class="map-container">
+        <div class="card">
+            <h3>Live Radar Reference Layer</h3>
+            <div id="map" class="map-frame"></div>
+        </div>
+        <div class="card">
+            <h3>Multi-Tier Convective Risk Map (Yel / Red / Purp / Blk)</h3>
+            <div id="maskMap" class="map-frame"></div>
+        </div>
+    </div>
+
+    <div id="status">Syncing cluster engines...</div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script>
+        const timestampDisplay = document.getElementById('timestampDisplay');
+        const statusText = document.getElementById('status');
+
+        // 1. Initialize Dual Maps
+        const map = L.map('map').setView([15.0, 114.0], 5);
+        const maskMap = L.map('maskMap').setView([15.0, 114.0], 5);
+
+        map.on('move', () => {
+            maskMap.setView(map.getCenter(), map.getZoom(), { animate: false });
+        });
+
+        // Dedicated Vector Canvas Layer (Right map only)
+        let maskPolygonLayer = L.layerGroup().addTo(maskMap);
+
+        // 2. Basemaps
+        const leftRadarLayerGroup = L.layerGroup().addTo(map);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 11 }).addTo(map);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 11 }).addTo(maskMap);
+
+        let activeRadarUrl = '';
+
+        // 3. Fetch current live radar nodes from RainViewer Index
+        fetch('https://api.rainviewer.com/public/weather-maps.json')
+            .then(response => response.json())
+            .then(apiData => {
+                const host = apiData.host;
+                const latestFrame = apiData.radar.past[apiData.radar.past.length - 1];
+                
+                const timeString = new Date(latestFrame.time * 1000).toUTCString();
+                timestampDisplay.innerText = `Active Radar Frame: ${timeString}`;
+
+                activeRadarUrl = `${host}${latestFrame.path}/256/{z}/{x}/{y}/2/1_0.png`;
+
+                // Standard radar view on the left map
+                L.tileLayer(activeRadarUrl, {
+                    tileSize: 256,
+                    opacity: 0.70,
+                    crossOrigin: 'Anonymous',
+                    maxZoom: 11,
+                    maxNativeZoom: 7
+                }).addTo(leftRadarLayerGroup);
+
+                runViewportVectorAnalysis();
+                statusText.innerText = "Status: 4-Tier structural maps active. Pan or zoom freely.";
+            });
+
+        // 4. THE MULTI-TIER GEOSPATIAL EXTRACTION ENGINE
+        function runViewportVectorAnalysis() {
+            maskPolygonLayer.clearLayers();
+
+            const radarTiles = map.getContainer().querySelectorAll('.leaflet-tile-container img');
+            
+            // Four distinct arrays to sort geographical coordinates by risk tier
+            let tierPoints = {
+                yellow: [],
+                red: [],
+                purple: [],
+                black: []
+            };
+
+            const currentZoom = map.getZoom();
+            const sampleStep = currentZoom > 8 ? 4 : 8; 
+
+            radarTiles.forEach(tile => {
+                if (tile.complete && tile.naturalWidth !== 0) {
+                    const scratchCanvas = document.createElement('canvas');
+                    scratchCanvas.width = 256;
+                    scratchCanvas.height = 256;
+                    const sCtx = scratchCanvas.getContext('2d');
+                    
+                    try {
+                        sCtx.drawImage(tile, 0, 0, 256, 256);
+                        const imgData = sCtx.getImageData(0, 0, 256, 256);
+                        const pixels = imgData.data;
+
+                        const rect = tile.getBoundingClientRect();
+
+                        for (let y = 0; y < 256; y += sampleStep) { 
+                            for (let x = 0; x < 256; x += sampleStep) {
+                                let i = (y * 256 + x) * 4;
+                                let r = pixels[i], g = pixels[i + 1], b = pixels[i + 2], a = pixels[i + 3];
+                                
+                                if (a > 0) {
+                                    let assignedTier = null;
+
+                                    // Tier Isolation Conditions based on RainViewer color spectrums
+                                    if (r > 240 && g > 240 && b > 240) {
+                                        assignedTier = 'black';  // Catastrophic Peak/Hail Core (White/Near White)
+                                    } else if (r > 200 && g < 80 && b > 150) {
+                                        assignedTier = 'purple'; // Extreme Updraft Core (Pink/Magenta)
+                                    } else if (r > 170 && g < 60 && b < 60) {
+                                        assignedTier = 'red';    // Severe Convection Front (Deep Red/Crimson)
+                                    } else if (r > 210 && g > 160 && b < 50) {
+                                        assignedTier = 'yellow'; // Moderate Convection/Heavy Rain (Yellow/Orange mix)
+                                    }
+
+                                    if (assignedTier) {
+                                        const containerElement = map.getContainer().getBoundingClientRect();
+                                        const targetLayerX = rect.left - containerElement.left + x;
+                                        const targetLayerY = rect.top - containerElement.top + y;
+                                        
+                                        const realLatlng = map.containerPointToLatLng(L.point(targetLayerX, targetLayerY));
+                                        tierPoints[assignedTier].push(turf.point([realLatlng.lng, realLatlng.lat]));
+                                    }
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                }
+            });
+
+            // 5. SEPARATE CLUSTERING PASSES PER RISK LEVEL
+            // We define styling configurations for each specific tier identity
+            const tierStyles = {
+                yellow: { color: '#eab308', fillColor: '#fef08a', opacity: 0.35 },
+                red:    { color: '#dc2626', fillColor: '#fca5a5', opacity: 0.45 },
+                purple: { color: '#9333ea', fillColor: '#c084fc', opacity: 0.55 },
+                black:  { color: '#0f172a', fillColor: '#020617', opacity: 0.75 }
+            };
+
+            const dynamicRadius = Math.max(8, 60 - ((currentZoom - 5) * 10));
+
+            // Generate hulls independently for each tier so they layer up perfectly
+            Object.keys(tierPoints).forEach(tierName => {
+                const pointsList = tierPoints[tierName];
+                
+                if (pointsList.length >= 3) {
+                    const collection = turf.featureCollection(pointsList);
+                    try {
+                        const clustered = turf.clustersDbscan(collection, dynamicRadius, { units: 'kilometers', minPoints: 2 });
+                        let clusterIds = new Set();
+                        clustered.features.forEach(f => { if (f.properties.cluster !== undefined) clusterIds.add(f.properties.cluster); });
+
+                        clusterIds.forEach(id => {
+                            const subPoints = clustered.features.filter(f => f.properties.cluster === id);
+                            if (subPoints.length >= 3) {
+                                const hull = turf.convex(turf.featureCollection(subPoints));
+                                if (hull) {
+                                    L.geoJSON(hull, {
+                                        style: {
+                                            color: tierStyles[tierName].color,
+                                            weight: tierName === 'black' ? 4 : 2, // Thicker line for catastrophic zones
+                                            fillColor: tierStyles[tierName].fillColor,
+                                            fillOpacity: tierStyles[tierName].opacity
+                                        }
+                                    }).addTo(maskPolygonLayer);
+                                }
+                            }
+                        });
+                    } catch(err) {}
+                }
+            });
+        }
+
+        // 6. Map Lifecycle Hooks
+        map.on('movestart', () => {
+            maskPolygonLayer.clearLayers();
+        });
+
+        map.on('moveend', () => {
+            runViewportVectorAnalysis();
+        });
+    </script>
+</body>
+</html>
